@@ -174,19 +174,24 @@ def _norm_date(s: str) -> str | None:
     return f"{int(mm):02d}/{int(dd):02d}/{yyyy}"
 
 
-def fetch(session, county: str, case_number: str, cache_dir: str) -> str | None:
+def fetch(session, county: str, case_number: str, cache_dir: str):
+    """Return (html, hit_network). hit_network is False on a cache hit.
+
+    The caller paces on hit_network so we never burst the server, and so cache
+    hits (no request) don't waste the delay.
+    """
     cache_path = os.path.join(cache_dir, f"{case_number}.html")
     if os.path.exists(cache_path):
-        with open(cache_path) as fh:
-            return fh.read()
+        with open(cache_path, encoding="utf-8") as fh:
+            return fh.read(), False
     resp = session.get(BASE, params={"db": county, "number": case_number},
                        timeout=30)
     if resp.status_code != 200:
-        return None
+        return None, True
     os.makedirs(cache_dir, exist_ok=True)
-    with open(cache_path, "w") as fh:
+    with open(cache_path, "w", encoding="utf-8") as fh:
         fh.write(resp.text)
-    return resp.text
+    return resp.text, True
 
 
 def main(argv=None) -> None:
@@ -212,16 +217,31 @@ def main(argv=None) -> None:
     cache_dir = os.path.join(args.cache_dir, f"{args.county}")
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
 
-    written = found = 0
-    with open(args.out, "w") as out:
+    written = found = consecutive_blocks = 0
+    with open(args.out, "w", encoding="utf-8") as out:
         for seq in range(args.start, args.end + 1):
             case_number = f"{args.prefix}-{args.year}-{seq}"
             try:
-                html = fetch(session, args.county, case_number, cache_dir)
+                html, hit_network = fetch(session, args.county, case_number, cache_dir)
             except requests.RequestException as e:
                 print(f"  {case_number}: request error {e}")
                 time.sleep(args.delay)
                 continue
+            # Pace EVERY network request -- not just ones that yield a judgment --
+            # so non-judgment pages don't get fetched back-to-back and trip a ban.
+            if hit_network:
+                time.sleep(args.delay)
+            # Back off and stop if OSCN appears to be blocking us (repeated non-200s),
+            # rather than hammering through a rate-limit. Resume after the reset.
+            if hit_network and html is None:
+                consecutive_blocks += 1
+                if consecutive_blocks >= 5:
+                    print(f"  {case_number}: {consecutive_blocks} blocked requests "
+                          "in a row -- stopping to respect the rate limit. "
+                          "Resume later (cached pages are kept).")
+                    break
+                continue
+            consecutive_blocks = 0
             if not html:
                 continue
             rec = parse_case(html, args.county, case_number)
@@ -239,7 +259,6 @@ def main(argv=None) -> None:
             if args.limit and written >= args.limit:
                 print(f"  reached --limit {args.limit}, stopping.")
                 break
-            time.sleep(args.delay)
 
     print(f"\nFound {found} real case(s); wrote {written} record(s) to {args.out}")
     print(f"Raw HTML cached under {cache_dir}")
