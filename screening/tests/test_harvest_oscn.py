@@ -58,3 +58,39 @@ def test_best_amount_picks_largest_in_judgment_rows():
 def test_norm_date():
     assert harvest._norm_date("07-12-2018") == "07/12/2018"
     assert harvest._norm_date("Date") is None
+
+
+def test_parses_2026_template_excerpt():
+    # New OSCN template: structured span.parties_party markup, 6-column docket
+    # with an Amount column, and a structured Disposition table.
+    rec = harvest.parse_case(_fixture("oscn_CJ-2014-100_excerpt.html"), "tulsa", "CJ-2014-100")
+    assert rec["plaintiffs"] == ["BATES, GREGORY ALLEN"]
+    assert rec["defendants"] == ["HUGHES, JASON MICHAEL"]
+    assert "BREACH OF AGREEMENT" in rec["case_type"]
+    assert rec["file_date"] == "01/09/2014"
+    assert rec["last_activity_date"] == "10/17/2014"
+    # Dismissed, not a money judgment -> no judgment captured.
+    assert rec["judgment_date"] is None
+    assert rec["judgment_amount"] is None
+
+
+def test_disposition_judgment_is_detected():
+    html = """
+      <h2 class="section dockets">Docket</h2>
+      <table class="docketlist">
+        <tr><th>Date</th><th>Code</th><th>Description</th><th>Count</th><th>Party</th><th>Amount</th></tr>
+        <tr><td>03-14-2014</td><td>J</td><td>JOURNAL ENTRY OF JUDGMENT</td><td></td><td></td>
+            <td>$ 24,500.00</td></tr>
+      </table>
+      <table class="Disposition"><tbody><tr>
+        <td></td><td class="countpartyname">Defendant: DOE, JOHN</td>
+        <td class="countdisposition">Disposed: JUDGMENT FOR PLAINTIFF, 03/14/2014. Other</td>
+      </tr></tbody></table>
+    """
+    rec = harvest.parse_case("<h2 class='styletop'></h2><table><tr><td></td>"
+                             "<td><strong>No. CJ-2014-1 (Civil relief more than "
+                             "$10,000: ACCOUNT)</strong>Filed: 01/02/2014</td></tr>"
+                             "</table>" + html, "tulsa", "CJ-2014-1")
+    assert rec["judgment_date"] == "03/14/2014"
+    assert "JUDGMENT FOR PLAINTIFF" in rec["judgment_type"]
+    assert rec["judgment_amount"] == "$24,500.00"

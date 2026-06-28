@@ -75,16 +75,36 @@ def parse_case(html: str, county: str, case_number: str) -> dict | None:
 
     plaintiffs, defendants = _parse_parties(soup)
     docket = _parse_docket(soup)
+    dispositions = _parse_disposition(soup)
 
-    judgment_rows = [d for d in docket
-                     if any(k in d["description"].upper() for k in JUDGMENT_MARKERS)]
+    # A real money judgment is signalled two ways; require JUDGMENT and not a
+    # dismissal so dismissed/closed cases don't get mistaken for judgments.
+    def _is_judgment(text: str) -> bool:
+        u = text.upper()
+        return any(k in u for k in JUDGMENT_MARKERS) and "DISMISS" not in u
+
+    judgment_dispositions = [d for d in dispositions if _is_judgment(d["text"])]
+    judgment_rows = [d for d in docket if _is_judgment(d["description"])]
     enforcement_rows = [d for d in docket
                         if any(k in (d["code"] + " " + d["description"]).upper()
                                for k in ENFORCEMENT_MARKERS)]
 
-    judgment_date = judgment_rows[-1]["date"] if judgment_rows else None
-    judgment_text = judgment_rows[-1]["description"] if judgment_rows else None
+    if judgment_dispositions:
+        judgment_date = judgment_dispositions[-1]["date"]
+        judgment_text = judgment_dispositions[-1]["text"]
+    elif judgment_rows:
+        judgment_date = judgment_rows[-1]["date"]
+        judgment_text = judgment_rows[-1]["description"]
+    else:
+        judgment_date = judgment_text = None
+
+    # Amount: prefer judgment docket rows (Amount column); fall back to any
+    # dollar figure in the judgment disposition text.
     judgment_amount = _best_amount(judgment_rows)
+    if judgment_amount is None and judgment_dispositions:
+        judgment_amount = _best_amount(
+            [{"description": d["text"], "amount": ""} for d in judgment_dispositions])
+
     last_activity = docket[-1]["date"] if docket else None
     last_enforcement = enforcement_rows[-1]["date"] if enforcement_rows else None
 
@@ -107,24 +127,45 @@ def parse_case(html: str, county: str, case_number: str) -> dict | None:
     }
 
 
+def _clean(text: str) -> str:
+    return " ".join(text.replace("\xa0", " ").split())
+
+
 def _parse_parties(soup) -> tuple[list[str], list[str]]:
+    plaintiffs, defendants = [], []
+
+    # Preferred: 2026 OSCN template uses structured span.parties_party blocks.
+    blocks = soup.select("span.parties_party")
+    if blocks:
+        for blk in blocks:
+            name_el = blk.select_one(".parties_partyname")
+            type_el = blk.select_one(".parties_type")
+            if not name_el or not type_el:
+                continue
+            name = _clean(name_el.get_text()).rstrip(",").strip()
+            role = _clean(type_el.get_text()).lower()
+            if not name:
+                continue
+            if role == "plaintiff":
+                plaintiffs.append(name)
+            elif role == "defendant":
+                defendants.append(name)
+        return plaintiffs, defendants
+
+    # Fallback: older template -- plain text after the "Parties" header.
     header = soup.find(lambda t: t.name in ("h2", "h3")
                        and t.get_text(strip=True) == "Parties")
-    plaintiffs, defendants = [], []
     if not header:
         return plaintiffs, defendants
     block = header.find_next_sibling()
     if not block:
         return plaintiffs, defendants
-    text = block.get_text(" | ", strip=True)
-    for chunk in text.split("|"):
-        chunk = chunk.strip()
+    for chunk in block.get_text(" | ", strip=True).split("|"):
         m = ROLE_RE.search(chunk)
         if not m:
             continue
         role = m.group(1).lower()
-        name = chunk[:m.start()].replace("\xa0", " ")
-        name = " ".join(name.split()).rstrip(",").strip()
+        name = _clean(chunk[:m.start()]).rstrip(",").strip()
         if not name:
             continue
         if role == "plaintiff":
@@ -132,6 +173,22 @@ def _parse_parties(soup) -> tuple[list[str], list[str]]:
         elif role == "defendant":
             defendants.append(name)
     return plaintiffs, defendants
+
+
+def _parse_disposition(soup) -> list[dict]:
+    """Read the structured Disposition tables (each issue's outcome + date)."""
+    out = []
+    for tbl in soup.select("table.Disposition"):
+        for cell in tbl.select("td.countdisposition"):
+            text = _clean(cell.get_text())
+            if not text:
+                continue
+            m = re.search(r"Disposed:\s*(.*?),?\s*(\d{1,2}/\d{1,2}/\d{4})", text)
+            if m:
+                out.append({"text": _clean(m.group(1)), "date": m.group(2)})
+            else:
+                out.append({"text": text, "date": None})
+    return out
 
 
 def _parse_docket(soup) -> list[dict]:
@@ -151,16 +208,29 @@ def _parse_docket(soup) -> list[dict]:
         date = _norm_date(cells[0])
         if not date:
             continue  # skips the header row and continuation rows
+        # The 2026 template adds a 6th "Amount" column; older pages have none.
+        amount = cells[5] if len(cells) >= 6 else (cells[-1] if len(cells) > 3 else "")
         rows.append({"date": date, "code": cells[1],
-                     "description": cells[2] if len(cells) > 2 else ""})
+                     "description": cells[2] if len(cells) > 2 else "",
+                     "amount": amount})
     return rows
 
 
+def _clean_amount(text: str) -> float | None:
+    m = re.search(r"\$\s?([\d,]+\.\d{2})", text or "")
+    return float(m.group(1).replace(",", "")) if m else None
+
+
 def _best_amount(rows: list[dict]) -> str | None:
+    """Largest dollar figure tied to a judgment row -- from the Amount column
+    first, then any amount written inline in the description."""
     amounts = []
     for r in rows:
-        for m in re.findall(r"\$[\d,]+\.\d{2}", r["description"]):
-            amounts.append(float(m.replace("$", "").replace(",", "")))
+        amt = _clean_amount(r.get("amount", ""))
+        if amt is not None:
+            amounts.append(amt)
+        for m in re.findall(r"\$\s?[\d,]+\.\d{2}", r.get("description", "")):
+            amounts.append(float(m.replace("$", "").replace(",", "").strip()))
     if not amounts:
         return None
     return f"${max(amounts):,.2f}"
