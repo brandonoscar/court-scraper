@@ -45,6 +45,9 @@ rules:
       - detainer
       - distress warrant
       - possession
+      # Foreclosures are property-secured (not the unsecured "dormant paper"
+      # target) and usually get satisfied at sheriff sale -- exclude them.
+      - foreclosure
 
   # ---- Rule 1: judgment age must fall inside a target band -----------------
   judgment_age:
