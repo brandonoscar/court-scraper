@@ -60,6 +60,30 @@ def test_norm_date():
     assert harvest._norm_date("Date") is None
 
 
+def test_parse_search_results():
+    # Real OSCN Results.aspx row structure: tr.resultTableRow, first cell links
+    # to GetCaseInformation with the case number in the querystring. Search
+    # returns one row per party, so duplicates must collapse.
+    html = """
+    <table>
+      <tr class="resultTableRow">
+        <td><a href="GetCaseInformation.aspx?db=tulsa&number=CJ-2018-1234&cmid=9">CJ-2018-1234</a></td>
+        <td>03/01/2018</td><td>MIDLAND FUNDING LLC V DOE</td><td>DOE, JOHN (Defendant)</td>
+      </tr>
+      <tr class="resultTableRow">
+        <td><a href="GetCaseInformation.aspx?db=tulsa&number=CJ-2018-1234&cmid=9">CJ-2018-1234</a></td>
+        <td>03/01/2018</td><td>MIDLAND FUNDING LLC V DOE</td><td>MIDLAND FUNDING LLC (Plaintiff)</td>
+      </tr>
+      <tr class="resultTableRow">
+        <td><a href="GetCaseInformation.aspx?db=tulsa&number=FD-2018-9&cmid=9">FD-2018-9</a></td>
+        <td>03/02/2018</td><td>SOMETHING ELSE</td><td>X (Plaintiff)</td>
+      </tr>
+    </table>
+    """
+    nums = harvest.parse_search_results(html, prefix="CJ")
+    assert nums == ["CJ-2018-1234"]   # deduped, FD filtered out by prefix
+
+
 def test_parses_2026_template_excerpt():
     # New OSCN template: structured span.parties_party markup, 6-column docket
     # with an Amount column, and a structured Disposition table.

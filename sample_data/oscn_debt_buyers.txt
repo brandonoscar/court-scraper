@@ -1,0 +1,25 @@
+# Plaintiff names to SEARCH on OSCN (one per line). These are debt buyers and
+# consumer creditors whose CJ filings are almost always unsecured money
+# judgments -- the collectible "dormant paper" target. Used with:
+#   python screening/harvest_oscn.py --plaintiffs-file sample_data/oscn_debt_buyers.txt \
+#     --county tulsa --filed-after 06/28/2016 --filed-before 06/28/2021 --discover-only
+# Searching by name turns "fetch thousands of mostly-foreclosure cases" into a
+# curated hit-list, so each (rate-limited) detail fetch is a likely candidate.
+MIDLAND FUNDING
+MIDLAND CREDIT MANAGEMENT
+LVNV FUNDING
+PORTFOLIO RECOVERY ASSOCIATES
+CAVALRY SPV
+CACH LLC
+CROWN ASSET MANAGEMENT
+UNIFUND CCR
+JEFFERSON CAPITAL
+VELOCITY INVESTMENTS
+ABSOLUTE RESOLUTIONS
+DISCOVER BANK
+CAPITAL ONE
+CITIBANK
+AMERICAN EXPRESS
+SYNCHRONY BANK
+CREDIT ACCEPTANCE
+SANTANDER CONSUMER

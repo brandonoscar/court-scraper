@@ -274,6 +274,70 @@ def _norm_date(s: str) -> str | None:
     return f"{int(mm):02d}/{int(dd):02d}/{yyyy}"
 
 
+SEARCH_URL = "https://www.oscn.net/dockets/Results.aspx"
+
+
+def parse_search_results(html: str, prefix: str = "CJ") -> list[str]:
+    """Extract unique case numbers (matching prefix) from an OSCN Results page."""
+    soup = BeautifulSoup(html, "html.parser")
+    numbers, seen = [], set()
+    for row in soup.find_all("tr", class_="resultTableRow"):
+        cells = row.find_all("td")
+        if not cells:
+            continue
+        link = cells[0].find("a")
+        case_no = None
+        if link is not None:
+            m = re.search(r"number=([^&]+)", link.get("href", ""))
+            case_no = m.group(1) if m else link.get_text(strip=True)
+        case_no = (case_no or cells[0].get_text(strip=True)).strip()
+        if prefix and not case_no.upper().startswith(prefix.upper()):
+            continue
+        if case_no and case_no not in seen:
+            seen.add(case_no)
+            numbers.append(case_no)
+    return numbers
+
+
+def search_plaintiff(session, county: str, lname: str,
+                     filed_low: str = "", filed_high: str = "",
+                     prefix: str = "CJ"):
+    """Search OSCN by a party (plaintiff) name. Returns (numbers, truncated)."""
+    params = {k: "" for k in (
+        "number", "fname", "mname", "DoBMin", "DoBMax", "partytype", "apct",
+        "dcct", "ClosedDateL", "ClosedDateH", "iLC", "iLCType", "iYear",
+        "iNumber", "citation")}
+    params.update({"db": county, "lname": lname,
+                   "FiledDateL": filed_low, "FiledDateH": filed_high})
+    resp = session.get(SEARCH_URL, params=params, timeout=30)
+    if resp.status_code != 200:
+        return None, False
+    truncated = "results are limited to 500" in resp.text
+    return parse_search_results(resp.text, prefix), truncated
+
+
+def discover_targets(session, county, plaintiffs, filed_low, filed_high,
+                     prefix, delay):
+    """Search each plaintiff name; return a de-duplicated list of case numbers."""
+    targets, seen = [], set()
+    for name in plaintiffs:
+        name = name.strip()
+        if not name:
+            continue
+        nums, truncated = search_plaintiff(
+            session, county, name, filed_low, filed_high, prefix)
+        if nums is None:
+            print(f"  search blocked while querying '{name}' -- stopping discovery.")
+            break
+        fresh = [n for n in nums if n not in seen]
+        seen.update(fresh)
+        targets.extend(fresh)
+        flag = "  [TRUNCATED at 500 -- narrow the date range]" if truncated else ""
+        print(f"  '{name}': {len(nums)} hits ({len(fresh)} new){flag}")
+        time.sleep(delay)
+    return targets
+
+
 def fetch(session, county: str, case_number: str, cache_dir: str):
     """Return (html, hit_network). hit_network is False on a cache hit.
 
@@ -294,17 +358,61 @@ def fetch(session, county: str, case_number: str, cache_dir: str):
     return resp.text, True
 
 
+def _case_numbers_from_args(args, session):
+    """Resolve the list of case numbers to fetch, by mode (priority order):
+    1. --plaintiffs-file : SEARCH OSCN by debt-buyer names (targeted, high-yield)
+    2. --numbers-file    : an explicit list of case numbers
+    3. --year/--end      : blind sequential CJ enumeration (last resort)
+    """
+    if args.plaintiffs_file:
+        with open(args.plaintiffs_file, encoding="utf-8") as fh:
+            plaintiffs = [ln.strip() for ln in fh
+                          if ln.strip() and not ln.startswith("#")]
+        print(f"Discovering targets via {len(plaintiffs)} plaintiff searches "
+              f"(filed {args.filed_after or 'any'}..{args.filed_before or 'any'})")
+        targets = discover_targets(session, args.county, plaintiffs,
+                                   args.filed_after or "", args.filed_before or "",
+                                   args.prefix, args.delay)
+        if args.out_numbers:
+            os.makedirs(os.path.dirname(args.out_numbers) or ".", exist_ok=True)
+            with open(args.out_numbers, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(targets) + "\n")
+            print(f"Wrote {len(targets)} target case number(s) to {args.out_numbers}")
+        return targets
+    if args.numbers_file:
+        with open(args.numbers_file, encoding="utf-8") as fh:
+            return [ln.strip() for ln in fh if ln.strip() and not ln.startswith("#")]
+    if args.year and args.end:
+        return [f"{args.prefix}-{args.year}-{i}"
+                for i in range(args.start, args.end + 1)]
+    raise SystemExit("Provide one of: --plaintiffs-file, --numbers-file, "
+                     "or --year with --end.")
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--county", default="tulsa", help="OSCN db, e.g. tulsa, oklahoma")
     ap.add_argument("--prefix", default="CJ", help="Case-type prefix (CJ = civil >$10k)")
-    ap.add_argument("--year", type=int, required=True)
+    # Mode 1: targeted discovery by plaintiff name (recommended).
+    ap.add_argument("--plaintiffs-file", help="File of plaintiff names, one per "
+                    "line, to SEARCH for (debt buyers -> mostly money judgments)")
+    ap.add_argument("--filed-after", help="Discovery filing-date low, MM/DD/YYYY")
+    ap.add_argument("--filed-before", help="Discovery filing-date high, MM/DD/YYYY")
+    ap.add_argument("--out-numbers", default="sample_data/oscn_targets.txt",
+                    help="Where discovery writes the target case-number list")
+    ap.add_argument("--discover-only", action="store_true",
+                    help="Run discovery and stop (don't fetch detail pages yet)")
+    # Mode 2: explicit case-number list.
+    ap.add_argument("--numbers-file", help="File of case numbers to fetch")
+    # Mode 3: blind sequential enumeration.
+    ap.add_argument("--year", type=int, help="(enumeration mode) filing year")
     ap.add_argument("--start", type=int, default=1, help="First sequence number")
-    ap.add_argument("--end", type=int, required=True, help="Last sequence number")
+    ap.add_argument("--end", type=int, help="(enumeration mode) last sequence number")
+    # Common.
     ap.add_argument("--out", default="sample_data/oscn_tulsa_records.jsonl")
     ap.add_argument("--cache-dir", default="sample_data/oscn_cache")
-    ap.add_argument("--delay", type=float, default=1.0, help="Seconds between requests")
+    ap.add_argument("--delay", type=float, default=3.0, help="Seconds between requests")
     ap.add_argument("--only-judgments", action="store_true",
                     help="Only write records that have a judgment docket entry")
     ap.add_argument("--limit", type=int, default=0,
@@ -317,10 +425,15 @@ def main(argv=None) -> None:
     cache_dir = os.path.join(args.cache_dir, f"{args.county}")
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
 
+    case_numbers = _case_numbers_from_args(args, session)
+    if args.discover_only:
+        print(f"Discovery complete: {len(case_numbers)} targets. "
+              "Re-run with --numbers-file to fetch detail pages.")
+        return
+
     written = found = consecutive_blocks = 0
     with open(args.out, "w", encoding="utf-8") as out:
-        for seq in range(args.start, args.end + 1):
-            case_number = f"{args.prefix}-{args.year}-{seq}"
+        for case_number in case_numbers:
             try:
                 html, hit_network = fetch(session, args.county, case_number, cache_dir)
             except requests.RequestException as e:
