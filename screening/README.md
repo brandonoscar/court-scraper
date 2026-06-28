@@ -10,11 +10,14 @@ fetching internals — reading the scraper's output is the only coupling.
 > it is **old**, shows **no recent enforcement activity**, and is **large
 > enough** to pursue.
 
-Current business thresholds (DeKalb County, GA / Tyler Odyssey):
+Current business thresholds (Tulsa County, OK / OSCN):
 
-- **No evictions** — dispossessory / unlawful-detainer case types are excluded.
+- **A real money judgment was entered** — JUDGMENT for the plaintiff (not a
+  dismissed, open, or random case).
+- **Not satisfied / released / vacated** — paid-off paper is worthless.
+- **No evictions** — dispossessory / forcible-entry-and-detainer excluded.
 - **Amount over $20,000.**
-- **Age 8–15 years.**
+- **Age 0–10 years** (present back to ten years).
 - **Dormant** — no renewal/execution/garnishment in the last 5 years.
 
 All of these live in [`config.yaml`](config.yaml). Change the screen by editing
@@ -27,7 +30,7 @@ config, never by editing rule code.
   Models may *later* help with messy text extraction — never with whether a
   judgment qualifies.
 - **No magic numbers.** Every threshold is a config value.
-- **One county first.** Built and proven on `ga_dekalb`; generalize only after.
+- **One county first.** Targeting `ok_tulsa` (OSCN); generalize only after one works end to end.
 
 ## Pipeline
 
@@ -58,7 +61,7 @@ scraper output ──► ingest ──► normalize ──► SQLite table ─�
 ```bash
 # 1. Ingest scraper output into the clean table
 python -m screening.cli ingest --html-dir tests/fixtures/ga_dekalb        # real Odyssey pages
-python -m screening.cli ingest --records sample_data/ga_dekalb_synthetic.jsonl  # labeled demo
+python -m screening.cli ingest --records sample_data/oscn_tulsa_synthetic.jsonl  # labeled demo
 
 # 2. Screen -> ranked worklist CSV
 python -m screening.cli screen
@@ -72,9 +75,9 @@ python -m pytest screening/tests/ -q
 
 `screening/out/worklist.csv`, one row per candidate, sorted by amount desc, with:
 `rank, case_number, debtor_name, creditor_name, judgment_amount, date_entered,
-judgment_type, jurisdiction, court, case_type, last_activity_date,
-last_enforcement_date, is_synthetic, source`, plus a `why_<rule>` column for each
-rule explaining exactly why the candidate passed.
+judgment_for, judgment_type, satisfaction_date, jurisdiction, court, case_type,
+last_activity_date, last_enforcement_date, is_synthetic, source`, plus a
+`why_<rule>` column for each rule explaining exactly why the candidate passed.
 
 ## ⚠️ Real vs. synthetic data
 
@@ -84,7 +87,7 @@ the proxy). So today's run uses two inputs:
 
 1. **Real** already-scraped Odyssey pages in `tests/fixtures/ga_dekalb` — all
    evictions, so they correctly produce **0 candidates** under the current rules.
-2. **Synthetic** [`sample_data/ga_dekalb_synthetic.jsonl`](../sample_data/ga_dekalb_synthetic.jsonl)
+2. **Synthetic** [`sample_data/oscn_tulsa_synthetic.jsonl`](../sample_data/oscn_tulsa_synthetic.jsonl)
    — clearly labeled, `is_synthetic=1`, used only to exercise the rules at the
    10-candidate scale. **No row in it is a real judgment.**
 

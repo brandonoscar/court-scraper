@@ -32,6 +32,9 @@ class JudgmentRecord:
     last_enforcement_date: Optional[date] = None  # most recent enforcement-type event
 
     # --- jurisdiction / context --------------------------------------------
+    judgment_for: Optional[str] = None          # "Plaintiff" / "Defendant"
+    satisfaction_date: Optional[date] = None    # date judgment satisfied/released/vacated
+
     court: Optional[str] = None
     jurisdiction_label: Optional[str] = None
     case_type: Optional[str] = None
@@ -46,7 +49,7 @@ class JudgmentRecord:
         d = asdict(self)
         d["debtor_names_all"] = "; ".join(self.debtor_names_all)
         for k in ("judgment_date", "date_entered", "last_activity_date",
-                  "last_enforcement_date"):
+                  "last_enforcement_date", "satisfaction_date"):
             d[k] = d[k].isoformat() if d[k] else None
         d["is_synthetic"] = int(self.is_synthetic)
         return d

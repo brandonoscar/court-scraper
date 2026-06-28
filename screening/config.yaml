@@ -11,16 +11,27 @@
 # -----------------------------------------------------------------------------
 
 jurisdiction:
-  # Build for ONE county first. This is the Tyler Odyssey county with real
-  # already-scraped detail pages in the repo (tests/fixtures/ga_dekalb).
-  place_id: ga_dekalb
-  label: "DeKalb County, GA (Tyler Odyssey)"
+  # Build for ONE county first. Target: Tulsa County OSCN (public HTML, CJ =
+  # "civil relief more than $10,000", where real money judgments live).
+  place_id: ok_tulsa
+  label: "Tulsa County, OK (OSCN)"
 
 # Anchor date for all age / dormancy math. Pin it for reproducible runs;
 # set to null to use the system date at run time.
 as_of_date: "2026-06-28"
 
 rules:
+  # ---- Require an actual money judgment was entered (not a random case) ----
+  money_judgment_entered:
+    enabled: true
+    require_for_plaintiff: true   # judgment must be FOR the plaintiff (the creditor)
+
+  # ---- Exclude judgments that are satisfied / released / vacated -----------
+  # If the debtor already paid (satisfaction/release) or it was vacated, the
+  # paper is worthless. Satisfaction is detected during ingest from the docket.
+  not_satisfied:
+    enabled: true
+
   # ---- Rule 0: exclude case types we never pursue -------------------------
   # Per business direction: no evictions / dispossessory / unlawful detainer.
   # Matched case-insensitively as substrings against the case type.
@@ -30,14 +41,16 @@ rules:
       - dispossess
       - eviction
       - unlawful detainer
+      - forcible entry
+      - detainer
       - distress warrant
       - possession
 
   # ---- Rule 1: judgment age must fall inside a target band -----------------
   judgment_age:
     enabled: true
-    min_years: 8     # judgment must be at least this old
-    max_years: 15    # ...and no older than this
+    min_years: 0     # present...
+    max_years: 10    # ...back to 10 years ago
 
   # ---- Rule 2: dormant -- no recent enforcement activity -------------------
   dormancy:

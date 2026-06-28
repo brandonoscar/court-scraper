@@ -30,6 +30,8 @@ def _row_to_record(row) -> JudgmentRecord:
         date_entered=d(row["date_entered"]),
         last_activity_date=d(row["last_activity_date"]),
         last_enforcement_date=d(row["last_enforcement_date"]),
+        judgment_for=row["judgment_for"],
+        satisfaction_date=d(row["satisfaction_date"]),
         court=row["court"],
         jurisdiction_label=row["jurisdiction_label"],
         case_type=row["case_type"],
@@ -76,7 +78,9 @@ def screen(records: List[JudgmentRecord], config: dict) -> List[dict]:
             "creditor_name": rec.creditor_name,
             "judgment_amount": f"{rec.judgment_amount:.2f}" if rec.judgment_amount is not None else "",
             "date_entered": rec.date_entered.isoformat() if rec.date_entered else "",
+            "judgment_for": rec.judgment_for or "",
             "judgment_type": rec.judgment_type or "",
+            "satisfaction_date": rec.satisfaction_date.isoformat() if rec.satisfaction_date else "",
             "jurisdiction": rec.jurisdiction_label or rec.source_place_id,
             "court": rec.court or "",
             "case_type": rec.case_type or "",
@@ -96,8 +100,9 @@ def write_csv(worklist: List[dict], path: str) -> None:
     if not worklist:
         # Still write a header-only file so downstream tooling has a stable shape.
         fieldnames = ["rank", "case_number", "debtor_name", "creditor_name",
-                      "judgment_amount", "date_entered", "judgment_type",
-                      "jurisdiction", "court", "case_type", "last_activity_date",
+                      "judgment_amount", "date_entered", "judgment_for",
+                      "judgment_type", "satisfaction_date", "jurisdiction",
+                      "court", "case_type", "last_activity_date",
                       "last_enforcement_date", "is_synthetic", "source"]
     else:
         fieldnames = list(worklist[0].keys())

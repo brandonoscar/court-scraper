@@ -52,6 +52,42 @@ def rule_case_type_exclude(record: JudgmentRecord, cfg: dict, as_of: date) -> Ru
 
 
 # ---------------------------------------------------------------------------
+# Rule -- an actual MONEY JUDGMENT must have been entered (not a random case)
+# ---------------------------------------------------------------------------
+def rule_money_judgment_entered(record: JudgmentRecord, cfg: dict, as_of: date) -> RuleResult:
+    name = "money_judgment_entered"
+    if record.judgment_date is None:
+        return RuleResult(name, False,
+                          "no money judgment entered (case dismissed/open/"
+                          "no judgment on docket)")
+    jtype = (record.judgment_type or "").upper()
+    if "JUDGMENT" not in jtype:
+        return RuleResult(name, False,
+                          f"disposition '{record.judgment_type}' is not a money "
+                          "judgment")
+    if cfg.get("require_for_plaintiff", True):
+        if record.judgment_for and record.judgment_for.lower() != "plaintiff":
+            return RuleResult(name, False,
+                              f"judgment was for {record.judgment_for}, not plaintiff")
+    return RuleResult(name, True,
+                      f"money judgment entered {record.judgment_date} "
+                      f"({record.judgment_type})")
+
+
+# ---------------------------------------------------------------------------
+# Rule -- judgment must NOT be satisfied / released / vacated
+# ---------------------------------------------------------------------------
+def rule_not_satisfied(record: JudgmentRecord, cfg: dict, as_of: date) -> RuleResult:
+    name = "not_satisfied"
+    if record.satisfaction_date is not None:
+        return RuleResult(name, False,
+                          f"judgment satisfied/released/vacated on "
+                          f"{record.satisfaction_date} -- not collectible")
+    return RuleResult(name, True,
+                      "no satisfaction/release/vacatur on record (still open)")
+
+
+# ---------------------------------------------------------------------------
 # Rule 1 -- judgment age inside the target band
 # ---------------------------------------------------------------------------
 def rule_judgment_age(record: JudgmentRecord, cfg: dict, as_of: date) -> RuleResult:
@@ -114,6 +150,8 @@ def rule_amount_floor(record: JudgmentRecord, cfg: dict, as_of: date) -> RuleRes
 
 # Registry: rule name -> function. Disabled rules (per config) are skipped.
 RULES = [
+    ("money_judgment_entered", rule_money_judgment_entered),
+    ("not_satisfied", rule_not_satisfied),
     ("case_type_exclude", rule_case_type_exclude),
     ("judgment_age", rule_judgment_age),
     ("dormancy", rule_dormancy),

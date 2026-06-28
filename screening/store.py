@@ -19,7 +19,8 @@ from .models import JudgmentRecord
 _COLUMNS = [
     "source_place_id", "case_number", "debtor_name", "debtor_names_all",
     "creditor_name", "judgment_amount", "judgment_date", "date_entered",
-    "last_activity_date", "last_enforcement_date", "court", "jurisdiction_label",
+    "last_activity_date", "last_enforcement_date", "judgment_for",
+    "satisfaction_date", "court", "jurisdiction_label",
     "case_type", "judgment_type", "raw_source", "is_synthetic",
 ]
 

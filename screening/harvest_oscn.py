@@ -50,6 +50,12 @@ ENFORCEMENT_MARKERS = [
     "GARNISH", "EXECUTION", "REVIVOR", "REVIVAL", "RENEWAL", "LEVY",
     "CITATION", "ASSET HEARING", "HEARING ON ASSETS", "WRIT",
 ]
+# Docket/disposition text meaning the judgment is no longer collectible.
+SATISFACTION_MARKERS = [
+    "SATISFACTION OF JUDGMENT", "SATISFIED", "RELEASE OF JUDGMENT",
+    "RELEASE AND SATISFACTION", "JUDGMENT RELEASED", "PARTIAL RELEASE",
+    "VACATED", "JUDGMENT VACATED", "SET ASIDE",
+]
 
 
 def parse_case(html: str, county: str, case_number: str) -> dict | None:
@@ -105,6 +111,23 @@ def parse_case(html: str, county: str, case_number: str) -> dict | None:
         judgment_amount = _best_amount(
             [{"description": d["text"], "amount": ""} for d in judgment_dispositions])
 
+    # Who the judgment was for (we only pursue judgments FOR the plaintiff).
+    judgment_for = None
+    jtext = " ".join(d["text"].upper() for d in judgment_dispositions)
+    if "FOR PLAINTIFF" in jtext or "FOR THE PLAINTIFF" in jtext:
+        judgment_for = "Plaintiff"
+    elif "FOR DEFENDANT" in jtext or "FOR THE DEFENDANT" in jtext:
+        judgment_for = "Defendant"
+
+    # Satisfaction / release / vacatur -> judgment no longer collectible.
+    satis_rows = [d for d in docket
+                  if any(k in (d["code"] + " " + d["description"]).upper()
+                         for k in SATISFACTION_MARKERS)]
+    satis_dispo = any(any(k in d["text"].upper() for k in SATISFACTION_MARKERS)
+                      for d in dispositions)
+    satisfaction_date = satis_rows[-1]["date"] if satis_rows else (
+        judgment_date if satis_dispo else None)
+
     last_activity = docket[-1]["date"] if docket else None
     last_enforcement = enforcement_rows[-1]["date"] if enforcement_rows else None
 
@@ -119,7 +142,9 @@ def parse_case(html: str, county: str, case_number: str) -> dict | None:
         "defendants": defendants,
         "judgment_date": judgment_date,
         "judgment_type": judgment_text,
+        "judgment_for": judgment_for,
         "judgment_amount": judgment_amount,
+        "satisfaction_date": satisfaction_date,
         "last_activity_date": last_activity,
         "last_enforcement_date": last_enforcement,
         # kept for auditability of the best-effort amount:

@@ -11,6 +11,8 @@ from screening.rules import (
     rule_case_type_exclude,
     rule_dormancy,
     rule_judgment_age,
+    rule_money_judgment_entered,
+    rule_not_satisfied,
 )
 
 AS_OF = date(2026, 6, 28)
@@ -20,6 +22,38 @@ def _rec(**kw):
     base = dict(source_place_id="ga_dekalb", case_number="X")
     base.update(kw)
     return JudgmentRecord(**base)
+
+
+# ---- money_judgment_entered ----------------------------------------------
+def test_money_judgment_for_plaintiff_passes():
+    cfg = {"require_for_plaintiff": True}
+    rec = _rec(judgment_date=date(2019, 1, 1),
+               judgment_type="JOURNAL ENTRY OF JUDGMENT FOR PLAINTIFF",
+               judgment_for="Plaintiff")
+    assert rule_money_judgment_entered(rec, cfg, AS_OF).passed is True
+
+
+def test_no_judgment_entered_fails():
+    cfg = {"require_for_plaintiff": True}
+    rec = _rec(judgment_date=None, judgment_type="DISMISSED WITHOUT PREJUDICE")
+    assert rule_money_judgment_entered(rec, cfg, AS_OF).passed is False
+
+
+def test_judgment_for_defendant_fails():
+    cfg = {"require_for_plaintiff": True}
+    rec = _rec(judgment_date=date(2019, 1, 1),
+               judgment_type="JUDGMENT FOR DEFENDANT", judgment_for="Defendant")
+    assert rule_money_judgment_entered(rec, cfg, AS_OF).passed is False
+
+
+# ---- not_satisfied --------------------------------------------------------
+def test_open_judgment_passes():
+    assert rule_not_satisfied(_rec(satisfaction_date=None), {}, AS_OF).passed is True
+
+
+def test_satisfied_judgment_fails():
+    rec = _rec(satisfaction_date=date(2020, 3, 15))
+    assert rule_not_satisfied(rec, {}, AS_OF).passed is False
 
 
 # ---- case_type_exclude ----------------------------------------------------
