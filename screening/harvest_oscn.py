@@ -202,6 +202,9 @@ def main(argv=None) -> None:
     ap.add_argument("--delay", type=float, default=1.0, help="Seconds between requests")
     ap.add_argument("--only-judgments", action="store_true",
                     help="Only write records that have a judgment docket entry")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="Stop after writing this many records (0 = no limit). "
+                         "Use to grab just enough cases fast.")
     args = ap.parse_args(argv)
 
     session = requests.Session()
@@ -228,10 +231,14 @@ def main(argv=None) -> None:
             if args.only_judgments and not rec.get("judgment_date"):
                 continue
             out.write(json.dumps(rec) + "\n")
+            out.flush()
             written += 1
             amt = rec.get("judgment_amount") or "-"
             print(f"  {case_number}: {rec['case_type']} | amt {amt} | "
                   f"def {rec['defendants'][:1]}")
+            if args.limit and written >= args.limit:
+                print(f"  reached --limit {args.limit}, stopping.")
+                break
             time.sleep(args.delay)
 
     print(f"\nFound {found} real case(s); wrote {written} record(s) to {args.out}")
