@@ -1,0 +1,70 @@
+# Screening configuration
+# -----------------------------------------------------------------------------
+# EVERY threshold the screen uses lives here. There are no magic numbers buried
+# in the rule code -- if you want to change what qualifies, you change it here.
+#
+# Business thesis being screened for:
+#   "collectible debtor, dormant paper" -- a money judgment is worth pursuing
+#   when it is OLD, shows NO recent enforcement activity, and is large enough
+#   to be worth acquiring. Asset ownership is a later, separate signal (see
+#   README); it is intentionally NOT decided here.
+# -----------------------------------------------------------------------------
+
+jurisdiction:
+  # Build for ONE county first. This is the Tyler Odyssey county with real
+  # already-scraped detail pages in the repo (tests/fixtures/ga_dekalb).
+  place_id: ga_dekalb
+  label: "DeKalb County, GA (Tyler Odyssey)"
+
+# Anchor date for all age / dormancy math. Pin it for reproducible runs;
+# set to null to use the system date at run time.
+as_of_date: "2026-06-28"
+
+rules:
+  # ---- Rule 0: exclude case types we never pursue -------------------------
+  # Per business direction: no evictions / dispossessory / unlawful detainer.
+  # Matched case-insensitively as substrings against the case type.
+  case_type_exclude:
+    enabled: true
+    exclude_keywords:
+      - dispossess
+      - eviction
+      - unlawful detainer
+      - distress warrant
+      - possession
+
+  # ---- Rule 1: judgment age must fall inside a target band -----------------
+  judgment_age:
+    enabled: true
+    min_years: 8     # judgment must be at least this old
+    max_years: 15    # ...and no older than this
+
+  # ---- Rule 2: dormant -- no recent enforcement activity -------------------
+  dormancy:
+    enabled: true
+    # Dormant if no ENFORCEMENT-type docket event has occurred within this many
+    # years of as_of_date (or none ever has).
+    inactive_years: 5
+    # Docket-event text that counts as "enforcement / keeping the paper alive".
+    # Matched case-insensitively as substrings against each docket entry.
+    enforcement_keywords:
+      - renewal
+      - revival
+      - revive
+      - execution
+      - garnish
+      - "fi fa"
+      - fifa
+      - levy
+      - citation
+      - "writ of execution"
+
+  # ---- Rule 3: judgment amount must clear a floor --------------------------
+  amount_floor:
+    enabled: true
+    min_amount: 20000.00   # per business direction: only judgments over $20k
+
+output:
+  csv_path: "screening/out/worklist.csv"
+  # A candidate must pass EVERY enabled rule to make the worklist.
+  require_all_rules: true

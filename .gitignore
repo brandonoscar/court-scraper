@@ -13,3 +13,7 @@ htmlcov
 .court-scraper/
 .env
 .eggs
+
+# Screening layer
+.venv/
+screening/out/
