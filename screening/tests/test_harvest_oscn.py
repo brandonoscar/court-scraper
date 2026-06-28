@@ -74,6 +74,17 @@ def test_parses_2026_template_excerpt():
     assert rec["judgment_amount"] is None
 
 
+def test_real_money_judgment_with_amount_and_release():
+    # Real CJ-2014-68: $97,049.03 judgment, later released. Validates amount from
+    # the JEJ description, JUDGEMENT (British) spelling, and satisfaction.
+    rec = harvest.parse_case(_fixture("oscn_CJ-2014-68_excerpt.html"), "tulsa", "CJ-2014-68")
+    assert rec["judgment_date"] == "02/23/2015"
+    assert rec["judgment_amount"] == "$97,049.03"
+    assert rec["satisfaction_date"] == "10/31/2017"      # RELEASE OF JUDGMENT
+    assert rec["last_enforcement_date"] == "03/23/2016"   # post-judgment execution
+    assert rec["plaintiffs"] == ["JPMORGAN CHASE BANK NATIONAL ASSOCIATION"]
+
+
 def test_disposition_judgment_is_detected():
     html = """
       <h2 class="section dockets">Docket</h2>

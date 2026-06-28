@@ -61,7 +61,8 @@ def rule_money_judgment_entered(record: JudgmentRecord, cfg: dict, as_of: date) 
                           "no money judgment entered (case dismissed/open/"
                           "no judgment on docket)")
     jtype = (record.judgment_type or "").upper()
-    if "JUDGMENT" not in jtype:
+    # OSCN uses both spellings: JUDGMENT and JUDGEMENT.
+    if "JUDGMENT" not in jtype and "JUDGEMENT" not in jtype:
         return RuleResult(name, False,
                           f"disposition '{record.judgment_type}' is not a money "
                           "judgment")

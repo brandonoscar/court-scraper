@@ -43,8 +43,9 @@ BASE = "https://www.oscn.net/dockets/GetCaseInformation.aspx"
 ROLE_RE = re.compile(
     r"(Plaintiff|Defendant|Garnishee|Petitioner|Respondent|Third Party)", re.I)
 
-# Docket text that signals the judgment itself.
-JUDGMENT_MARKERS = ["JUDGMENT", "JOURNAL ENTRY OF JUDGMENT", "DEFAULT JUDGMENT"]
+# Docket/disposition text that signals the judgment itself.
+# NOTE: OSCN uses both spellings -- "JUDGMENT" and "JUDGEMENT".
+JUDGMENT_MARKERS = ["JUDGMENT", "JUDGEMENT"]
 # Docket text that signals someone is actively enforcing/renewing (resets dormancy).
 ENFORCEMENT_MARKERS = [
     "GARNISH", "EXECUTION", "REVIVOR", "REVIVAL", "RENEWAL", "LEVY",
@@ -87,7 +88,11 @@ def parse_case(html: str, county: str, case_number: str) -> dict | None:
     # dismissal so dismissed/closed cases don't get mistaken for judgments.
     def _is_judgment(text: str) -> bool:
         u = text.upper()
-        return any(k in u for k in JUDGMENT_MARKERS) and "DISMISS" not in u
+        # The judgment itself -- not a dismissal, and not a post-judgment
+        # execution/garnishment row (those merely reference "POST JUDGMENT").
+        return (any(k in u for k in JUDGMENT_MARKERS)
+                and "DISMISS" not in u and "EXECUTION" not in u
+                and "POST JUDGMENT" not in u)
 
     judgment_dispositions = [d for d in dispositions if _is_judgment(d["text"])]
     judgment_rows = [d for d in docket if _is_judgment(d["description"])]
