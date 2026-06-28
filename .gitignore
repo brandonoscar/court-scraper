@@ -17,3 +17,5 @@ htmlcov
 # Screening layer
 .venv/
 screening/out/
+sample_data/oscn_cache/
+sample_data/oscn_tulsa_records.jsonl

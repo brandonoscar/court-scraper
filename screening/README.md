@@ -88,6 +88,35 @@ the proxy). So today's run uses two inputs:
    — clearly labeled, `is_synthetic=1`, used only to exercise the rules at the
    10-candidate scale. **No row in it is a real judgment.**
 
-To produce a real worklist of $20k+ dormant judgments, the scraper must run
-against a live county (court domains allowlisted, or run locally and drop the
-cached HTML / a records JSONL here), then re-run the two commands above.
+To produce a real worklist of $20k+ dormant judgments, real data must enter from
+outside this sandbox. See the harvester below.
+
+## Getting REAL data: the OSCN harvester
+
+[`harvest_oscn.py`](harvest_oscn.py) is a self-contained script you run **on your
+own machine** (where the internet works) to pull real Oklahoma civil cases. It
+needs only `requests` + `beautifulsoup4` — not the rest of court-scraper.
+
+```bash
+pip install requests beautifulsoup4
+# Pull Tulsa CJ ("civil relief more than $10,000") cases and keep ones with a judgment:
+python screening/harvest_oscn.py --county tulsa --year 2014 --start 1 --end 1500 --only-judgments
+# -> sample_data/oscn_tulsa_records.jsonl  (+ raw HTML cached under sample_data/oscn_cache/)
+```
+
+Then back here (egress not required — it just reads the file you produced):
+
+```bash
+python -m screening.cli ingest --records sample_data/oscn_tulsa_records.jsonl
+python -m screening.cli screen
+```
+
+Why Oklahoma/OSCN: it's public, server-rendered HTML with no login or captcha, and
+`CJ` cases are civil matters over $10k — exactly where money judgments live (OK
+evictions are a separate `FED` case type and are naturally excluded). The
+parser is tested against real OSCN pages ([`tests/test_harvest_oscn.py`](tests/test_harvest_oscn.py)).
+
+Judgment-**amount** text on OSCN varies; the harvester captures the dollar
+figure from JUDGMENT docket rows (best-effort) and keeps the raw judgment docket
+text on each record. If amounts look wrong on real judgment cases, send back a
+few of the cached HTML files and the extractor can be tuned against them.
